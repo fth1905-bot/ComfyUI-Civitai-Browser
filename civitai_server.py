@@ -44,6 +44,7 @@ TYPE_TO_FOLDER = {
 
 # loader node type (lowercase substring) -> ComfyUI model folder
 NODE_TO_FOLDER = [
+    ("latentupscale", "latent_upscale_models"),
     ("checkpointloader", "checkpoints"),
     ("imageonlycheckpointloader", "checkpoints"),
     ("lora", "loras"),
@@ -149,6 +150,8 @@ def _guess_folder(node_type, filename=""):
     fn = (filename or "").lower()
     if fn.endswith(".gguf") and "clip" not in fn and "t5" not in fn:
         return "diffusion_models"
+    if "latent" in fn and "upscal" in fn:
+        return "latent_upscale_models"
     if "lora" in fn:
         return "loras"
     if "vae" in fn:

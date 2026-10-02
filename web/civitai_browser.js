@@ -790,19 +790,91 @@ class CivitaiBrowser {
 
     if (P.nodes.length) {
       wrap.appendChild(el("h4", { style: { margin: "18px 0 8px", color: "var(--cvb-muted)", fontSize: "12px", textTransform: "uppercase" } }, "Missing custom nodes"));
-      const hasManager = !!document.querySelector("[id*='manager'], .comfyui-manager-menu-btn") || !!app.extensionManager?.command?.commands?.some?.((x) => /manager/i.test(x.id || ""));
-      wrap.appendChild(el("div", { class: "cvb-row" },
-        el("div", { class: "cvb-row-sub", style: { marginTop: 0, marginBottom: "8px" } },
-          hasManager
-            ? "Install them all at once with ComfyUI-Manager → \"Install Missing Custom Nodes\", then restart ComfyUI."
-            : "ComfyUI-Manager is recommended for installing these (Manager → \"Install Missing Custom Nodes\"). Restart ComfyUI afterwards."),
-        el("div", { class: "cvb-pills" }, P.nodes.map((n) => el("a", {
-          class: "cvb-tag", target: "_blank", rel: "noopener",
-          href: "https://github.com/search?type=code&q=" + encodeURIComponent(`"${n}" NODE_CLASS_MAPPINGS`),
-          title: "Search on GitHub",
-        }, n)))));
+      wrap.appendChild(this.customNodesBox(P));
     }
     c.appendChild(wrap);
+  }
+
+  // Which node packs provide the missing node types (from ComfyUI-Manager's node map).
+  async loadNodePacks(P) {
+    if (P.packs !== undefined) return;
+    P.packs = null;
+    let map = null;
+    for (const url of ["/v2/customnode/getmappings?mode=cache", "/customnode/getmappings?mode=cache"]) {
+      try { const r = await api.fetchApi(url); if (r.ok) { map = await r.json(); break; } } catch {}
+    }
+    if (!map) { P.packs = []; P.managerMap = false; this.state.view === "prep" && this.renderPrep(); return; }
+    P.managerMap = true;
+    const providers = {}; // node type -> [pack keys]
+    for (const [key, val] of Object.entries(map)) {
+      const nodes = val?.[0] || [];
+      const meta = val?.[1] || {};
+      let re = null;
+      try { if (meta.nodename_pattern) re = new RegExp(meta.nodename_pattern); } catch {}
+      for (const n of P.nodes) {
+        if (nodes.includes(n) || (re && re.test(n))) (providers[n] ||= []).push(key);
+      }
+    }
+    // greedily pick the fewest packs that cover the missing nodes
+    const left = new Set(P.nodes.filter((n) => providers[n]));
+    const packs = [];
+    while (left.size) {
+      const score = {};
+      for (const n of left) for (const k of providers[n]) score[k] = (score[k] || 0) + 1;
+      const best = Object.keys(score).sort((x, y) => score[y] - score[x] || (y.startsWith("http") - x.startsWith("http")))[0];
+      const covered = [...left].filter((n) => providers[n].includes(best));
+      covered.forEach((n) => left.delete(n));
+      const meta = map[best]?.[1] || {};
+      const url = best.startsWith("http") ? best : (meta.reference || `https://registry.comfy.org/nodes/${best}`);
+      packs.push({ key: best, title: meta.title_aux || meta.title || best.split("/").pop(), url, nodes: covered });
+    }
+    P.packs = packs;
+    P.unknownNodes = P.nodes.filter((n) => !providers[n]);
+    if (this._prep === P && this.state.view === "prep") this.renderPrep();
+  }
+
+  openManagerMissing() {
+    const cmds = app.extensionManager?.command?.commands || [];
+    const ids = ["Comfy.Manager.ShowMissingPacks", "Comfy.Manager.CustomNodesManager.ShowCustomNodesMenu", "Comfy.OpenManagerDialog", "Comfy.Manager.ShowLegacyManagerMenu"];
+    const id = ids.find((x) => cmds.some((c) => c.id === x));
+    if (!id) return toast("warn", "ComfyUI-Manager not found", "Install ComfyUI-Manager to install custom nodes from here.", 7000);
+    this.close(); // Manager's dialog needs the screen
+    try { app.extensionManager.command.execute(id); } catch (e) { toast("error", "Could not open Manager", e.message); }
+  }
+
+  customNodesBox(P) {
+    const box = el("div", { class: "cvb-row" });
+    const hasManager = (app.extensionManager?.command?.commands || []).some((x) => /^Comfy\.(Manager|OpenManagerDialog)/.test(x.id || ""));
+    box.appendChild(el("div", { class: "cvb-row-top", style: { marginBottom: "8px" } },
+      el("div", { class: "cvb-row-sub", style: { marginTop: 0, flex: 1 } },
+        hasManager
+          ? "Custom nodes are installed by ComfyUI-Manager (it handles the folder, Python packages and security checks). Restart ComfyUI afterwards."
+          : "ComfyUI-Manager is needed to install these. Restart ComfyUI afterwards."),
+      hasManager ? el("button", { class: "cvb-btn primary small", onclick: () => this.openManagerMissing() }, "Install with Manager") : null));
+    if (P.packs === undefined) { this.loadNodePacks(P); }
+    if (!P.packs) {
+      box.appendChild(el("div", { class: "cvb-file-meta" }, el("span", { class: "cvb-spinner" }), "  Looking up which packs provide these nodes…"));
+      box.appendChild(el("div", { class: "cvb-pills", style: { marginTop: "8px" } }, P.nodes.map((n) => el("span", { class: "cvb-tag" }, n))));
+      return box;
+    }
+    for (const pk of P.packs) {
+      box.appendChild(el("div", { class: "cvb-match-item", style: { marginBottom: "6px" } },
+        el("div", { class: "grow" },
+          el("div", {}, el("b", {}, pk.title), el("span", { class: "cvb-file-meta" }, `  ${pk.nodes.length} node${pk.nodes.length > 1 ? "s" : ""}`)),
+          el("div", { class: "cvb-file-meta" }, pk.nodes.join(", "))),
+        el("a", { class: "cvb-btn small", href: pk.url, target: "_blank", rel: "noopener", title: pk.url }, "↗")));
+    }
+    const unknown = P.unknownNodes || (P.managerMap ? [] : P.nodes);
+    if (unknown.length) {
+      box.appendChild(el("div", { class: "cvb-file-meta", style: { margin: "8px 0 6px" } },
+        P.managerMap ? "Not in ComfyUI-Manager's list (search GitHub, or ask the workflow author):" : "Search GitHub for these nodes:"));
+      box.appendChild(el("div", { class: "cvb-pills" }, unknown.map((n) => el("a", {
+        class: "cvb-tag", target: "_blank", rel: "noopener",
+        href: "https://github.com/search?type=code&q=" + encodeURIComponent(`"${n}" NODE_CLASS_MAPPINGS`),
+        title: "Search on GitHub",
+      }, n))));
+    }
+    return box;
   }
 
   prepRow(m) {

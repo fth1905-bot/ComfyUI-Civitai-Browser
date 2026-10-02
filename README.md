@@ -41,7 +41,7 @@ It's a pure frontend + API extension. It **adds no nodes**, **never modifies Com
    - any link you paste (Civitai or Hugging Face)
    - **or a model you already have**: if you own a similar file (e.g. `juggernautXL_v10` when the workflow asks for `v9`, or an fp8/GGUF variant), **Use mine** points the node at your file instead of downloading anything (with undo)
 5. **Download found models** saves everything into the right folder, under the exact file name the workflow expects, so the loaders resolve without any manual re-selecting.
-6. Lists missing **custom nodes**, so you can install them with ComfyUI-Manager → *Install Missing Custom Nodes*.
+6. Lists missing **custom nodes** and which pack provides each one (from ComfyUI-Manager's node list). **Install with Manager** opens Manager's missing-packs dialog, so the actual install is handled by Manager (folder, Python dependencies, security checks).
 
 <img src="docs/setup.webp" alt="One-click workflow setup" width="900">
 

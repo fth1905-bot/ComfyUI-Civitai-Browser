@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.0
+- **Missing custom nodes**: Setup now shows which node pack provides each missing node (using ComfyUI-Manager's node list), groups them, and links to each pack
+- **Install with Manager** button opens ComfyUI-Manager's missing-packs dialog. The installation itself is done by Manager, which handles the custom_nodes folder, Python dependencies and security checks.
+- Fixed: latent upscaler models are now placed in `latent_upscale_models` instead of `upscale_models`
+
 ## 1.2.0
 - **Use mine**: when a workflow asks for a model you don't have but you own a similar one (newer version, fp8/fp16 or GGUF variant, different folder), Setup offers to re-point the node to your file instead of downloading. One click, with undo.
 - Smarter Civitai suggestions: candidates are filtered by type, so a missing VAE no longer suggests checkpoints
