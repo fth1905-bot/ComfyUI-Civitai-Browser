@@ -1,7 +1,7 @@
 # Changelog
 
 ## 1.3.1
-- Fixed: models referenced inside JSON-encoded widget values (e.g. AusBoss LoraLoader rows) were not detected as missing
+- Fixed: LoRAs and other models stored as JSON inside a node's widget value were not detected as missing. This affects any loader that saves its list of models this way (for example multi-LoRA loaders such as AusBoss LoraLoader); all of them are now scanned, including nested lists.
 - Download links listed anywhere in a workflow (e.g. model lists in note nodes) are now used as sources
 - "Use mine" also works for these nodes
 
