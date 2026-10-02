@@ -1,0 +1,15 @@
+# local state written by the extension
+config.json
+library.json
+downloads_history.json
+*.civitai_part
+
+# python
+__pycache__/
+*.py[cod]
+
+# os / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
