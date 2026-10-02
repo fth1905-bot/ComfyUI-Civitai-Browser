@@ -227,6 +227,42 @@ function addLoaderNode(type, filename) {
   } catch (e) { console.warn(e); return false; }
 }
 
+const normModel = (v) => String(v || "").replace(/\\/g, "/").toLowerCase();
+
+// Re-point every widget in the loaded graph (incl. subgraphs) from one model name to another.
+function replaceModelInGraph(fromName, toName) {
+  const root = app.rootGraph || app.graph;
+  const graphs = [root];
+  try {
+    const sg = root?.subgraphs;
+    if (sg) for (const g of (typeof sg.values === "function" ? sg.values() : Object.values(sg))) graphs.push(g);
+  } catch {}
+  const from = normModel(fromName);
+  let count = 0;
+  for (const g of graphs) {
+    for (const node of (g?._nodes || g?.nodes || [])) {
+      for (const w of node.widgets || []) {
+        if (typeof w.value === "string" && normModel(w.value) === from) {
+          w.value = toName;
+          try { w.callback?.(w.value, app.canvas, node); } catch {}
+          count++;
+        } else if (w.value && typeof w.value === "object") {
+          for (const k of Object.keys(w.value)) {
+            if (typeof w.value[k] === "string" && normModel(w.value[k]) === from) { w.value[k] = toName; count++; }
+          }
+        }
+      }
+    }
+  }
+  try { (app.canvas || {}).setDirty?.(true, true); root?.setDirtyCanvas?.(true, true); } catch {}
+  return count;
+}
+
+const FOLDER_TYPES = {
+  checkpoints: ["Checkpoint"], loras: ["LORA", "LoCon", "DoRA", "LyCORIS"], vae: ["VAE"],
+  controlnet: ["Controlnet"], upscale_models: ["Upscaler"], embeddings: ["TextualInversion"],
+};
+
 function missingNodeTypes(wf) {
   const reg = window.LiteGraph?.registered_node_types || {};
   const out = new Set();
@@ -680,6 +716,8 @@ class CivitaiBrowser {
           for (const v of it.modelVersions || []) {
             for (const f of v.files || []) {
               const exact = (f.name || "").toLowerCase() === target;
+              const allowed = FOLDER_TYPES[m.folder];
+              if (!exact && allowed && !allowed.includes(it.type)) continue; // e.g. don't suggest checkpoints for a VAE
               if (exact || f.primary) {
                 if (!found.some((x) => x.file.id === f.id)) found.push({ model: it, version: v, file: f, exact });
               }
@@ -721,8 +759,9 @@ class CivitaiBrowser {
     const c = this.contentEl;
     c.innerHTML = "";
     const wrap = el("div", { class: "cvb-prep" });
-    const downloadable = P.missing.filter((m) => m.url && !m.taskId);
+    const downloadable = P.missing.filter((m) => m.url && !m.taskId && !m.usedLocal);
     const allDone = P.missing.every((m) => {
+      if (m.usedLocal) return true;
       const t = m.taskId && downloads.find(m.taskId);
       return t && (t.status === "done" || t.status === "exists");
     });
@@ -797,7 +836,36 @@ class CivitaiBrowser {
       return row;
     }
 
+    if (m.usedLocal) {
+      folder.disabled = true;
+      top.appendChild(el("span", { class: "cvb-status ok" }, "✓ Using your file"));
+      row.appendChild(el("div", { class: "cvb-row-sub" }, `Node now points to: ${m.usedLocal}`,
+        " · ", el("a", { href: "#", style: { color: "var(--cvb-accent)" }, onclick: (e) => {
+          e.preventDefault();
+          replaceModelInGraph(m.usedLocal, m.name);
+          m.usedLocal = null;
+          this.renderPrep();
+        } }, "undo")));
+      return row;
+    }
+
     row.appendChild(el("div", { class: "cvb-row-sub" }, `Node: ${m.node_type}`));
+    if (m.similar?.length) {
+      const box = el("div", { class: "cvb-match cvb-similar" },
+        el("div", { class: "cvb-file-meta" }, "💡 You already have something similar — use it instead of downloading:"));
+      for (const s of m.similar) {
+        box.appendChild(el("div", { class: "cvb-match-item" },
+          el("div", { class: "grow" }, el("b", {}, s.name), el("span", { class: "cvb-file-meta" }, `  📁 ${s.folder}${s.same_folder ? "" : " (different folder — the node may not see it)"}`)),
+          el("button", { class: "cvb-btn ok small", onclick: () => {
+            const n = replaceModelInGraph(m.name, s.name);
+            if (!n) return toast("warn", "Nothing changed", "Couldn't find this model in the loaded workflow. Is the workflow still open on the canvas?", 6000);
+            m.usedLocal = s.name;
+            toast("success", "Using your model", `${n} node input${n > 1 ? "s" : ""} → ${s.name}`, 3000);
+            this.renderPrep();
+          } }, "✓ Use mine")));
+      }
+      row.appendChild(box);
+    }
     if (m.status === "url") {
       top.appendChild(el("span", { class: "cvb-status ok" }, "Source known"));
       top.appendChild(el("button", { class: "cvb-btn primary small", onclick: () => this.downloadMissing(m) }, "⬇ Download"));

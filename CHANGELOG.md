@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.0
+- **Use mine**: when a workflow asks for a model you don't have but you own a similar one (newer version, fp8/fp16 or GGUF variant, different folder), Setup offers to re-point the node to your file instead of downloading. One click, with undo.
+- Smarter Civitai suggestions: candidates are filtered by type, so a missing VAE no longer suggests checkpoints
+- Better folder guessing for GGUF models and custom nodes that register their own model folders
+
 ## 1.1.0
 - **My Library**: every downloaded workflow is saved to `user/default/workflows/Civitai/` and can be reopened later
 - **Safe delete**: remove a workflow together with the models that were downloaded for it. User-owned, modified and shared models are always protected, and the checks are re-validated on the server.

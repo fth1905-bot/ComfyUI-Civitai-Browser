@@ -152,3 +152,4 @@
 }
 
 .cvb-btn.cvb-del.armed { background: var(--cvb-err); border-color: var(--cvb-err); color: #fff; }
+.cvb-similar { border-left: 3px solid var(--cvb-ok); padding-left: 8px; }

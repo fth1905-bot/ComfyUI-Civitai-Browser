@@ -1,7 +1,7 @@
 [project]
 name = "comfyui-civitai-browser"
 description = "Browse Civitai workflows and models inside ComfyUI and get any workflow ready in one click: load it, find missing models and download them into the right folders."
-version = "1.1.0"
+version = "1.2.0"
 license = { file = "LICENSE" }
 dependencies = []
 

@@ -39,6 +39,7 @@ It's a pure frontend + API extension. It **adds no nodes**, **never modifies Com
    - an **exact file name match** on Civitai, or
    - a short list of likely candidates you can choose from, or
    - any link you paste (Civitai or Hugging Face)
+   - **or a model you already have**: if you own a similar file (e.g. `juggernautXL_v10` when the workflow asks for `v9`, or an fp8/GGUF variant), **Use mine** points the node at your file instead of downloading anything (with undo)
 5. **Download found models** saves everything into the right folder, under the exact file name the workflow expects, so the loaders resolve without any manual re-selecting.
 6. Lists missing **custom nodes**, so you can install them with ComfyUI-Manager → *Install Missing Custom Nodes*.
 

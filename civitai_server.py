@@ -142,7 +142,13 @@ def _guess_folder(node_type, filename=""):
     for key, folder in NODE_TO_FOLDER:
         if key in nt:
             return folder
+    # a custom node that registered its own model folder (e.g. "SEEDVR2", "ipadapter")
+    for folder in _model_folders():
+        if len(folder) >= 4 and folder.lower() in nt:
+            return folder
     fn = (filename or "").lower()
+    if fn.endswith(".gguf") and "clip" not in fn and "t5" not in fn:
+        return "diffusion_models"
     if "lora" in fn:
         return "loras"
     if "vae" in fn:
@@ -729,6 +735,76 @@ def _model_strings(values):
                     yield vv
 
 
+# --------------------------------------------------------------------------- #
+# "use what I already have": find local files that look like the missing one
+# --------------------------------------------------------------------------- #
+_NOISE_TOKENS = {
+    "fp16", "fp32", "fp8", "bf16", "fp8e4m3fn", "fp8e5m2", "e4m3fn", "e5m2", "scaled", "pruned", "full",
+    "ema", "noema", "nonema", "emaonly", "safetensors", "ckpt", "final", "model", "fixed", "inpainting",
+}
+
+
+def _name_tokens(name):
+    stem = os.path.splitext(name.replace("\\", "/").rsplit("/", 1)[-1].lower())[0]
+    toks = [t for t in re.split(r"[^a-z0-9]+", stem) if t]
+    core = []
+    for t in toks:
+        if t in _NOISE_TOKENS or re.fullmatch(r"v?\d+(p\d+)?|q\d+|k|[sml]|\d+b", t):
+            continue  # versions, quantization (q4_k_m), sizes (7b)
+        # juggernautxl9 -> juggernautxl ; realvisxlv50 -> realvisxl
+        for part in re.split(r"(?<=[a-z])(?=\d)|(?<=\d)(?=[a-z])", t):
+            part = re.sub(r"v$", "", part) if len(part) > 3 else part
+            if part and not part.isdigit() and part not in _NOISE_TOKENS:
+                core.append(part)
+    return stem, toks, core
+
+
+def _ext_group(name):
+    e = os.path.splitext(name.lower())[1]
+    return "gguf" if e == ".gguf" else ("onnx" if e == ".onnx" else "torch")
+
+
+def _similar_local(missing_name, folder, limit=3):
+    from difflib import SequenceMatcher
+    _, m_toks, m_core = _name_tokens(missing_name)
+    if not m_core:
+        return []
+    m_core_s = " ".join(m_core)
+    m_group = _ext_group(missing_name)
+    pools = [folder] + [f for f in _model_folders() if f != folder]
+    out, seen = [], set()
+    for i, fold in enumerate(pools):
+        try:
+            names = folder_paths.get_filename_list(fold)
+        except Exception:
+            continue
+        for n in names:
+            if _ext_group(n) != m_group:
+                continue
+            _, toks, core = _name_tokens(n)
+            if not core:
+                continue
+            core_s = " ".join(core)
+            overlap = len(set(core) & set(m_core)) / max(len(set(core) | set(m_core)), 1)
+            ratio = SequenceMatcher(None, core_s, m_core_s).ratio()
+            score = max(overlap, ratio)
+            if core_s == m_core_s:
+                score = 1.0
+            elif min(len(core_s), len(m_core_s)) < 5:
+                continue  # very short names (e.g. "ae" vs "vae") are too ambiguous for fuzzy matching
+            if score < 0.72:
+                continue
+            if i > 0:
+                score -= 0.1  # prefer the folder the workflow's loader reads from
+            key = (fold, n)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append({"name": n, "folder": fold, "score": round(score, 3), "same_folder": i == 0})
+    out.sort(key=lambda x: -x["score"])
+    return out[:limit]
+
+
 @routes.post(PREFIX + "/analyze")
 async def analyze_workflow(request):
     body = await request.json()
@@ -759,9 +835,14 @@ async def analyze_workflow(request):
                 continue
             info = known_urls.get(key) or {}
             folder = info.get("directory") or _guess_folder(node_type, base)
+            try:
+                similar = _similar_local(base, folder)
+            except Exception as e:
+                logging.warning(f"{LOG} similar-file lookup failed: {e}")
+                similar = []
             missing.append({
                 "name": norm, "basename": base, "node_type": node_type,
-                "folder": folder, "url": info.get("url"),
+                "folder": folder, "url": info.get("url"), "similar": similar,
             })
     return web.json_response({"missing": missing, "present": present, "folders": _model_folders()})
 
