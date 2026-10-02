@@ -1,0 +1,16 @@
+[project]
+name = "comfyui-civitai-browser"
+description = "Browse Civitai workflows and models inside ComfyUI and get any workflow ready in one click: load it, find missing models and download them into the right folders."
+version = "1.1.0"
+license = { file = "LICENSE" }
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/fth1905-bot/ComfyUI-Civitai-Browser"
+"Bug Tracker" = "https://github.com/fth1905-bot/ComfyUI-Civitai-Browser/issues"
+Funding = "https://www.patreon.com/cw/FatihCakir"
+
+[tool.comfy]
+PublisherId = ""
+DisplayName = "Civitai Browser"
+Icon = ""
