@@ -1,0 +1,28 @@
+name: Bug report
+description: Something doesn't work as expected
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: input
+    id: civitai
+    attributes:
+      label: Civitai link (if related to a specific workflow/model)
+  - type: input
+    id: versions
+    attributes:
+      label: ComfyUI / frontend version
+      placeholder: e.g. ComfyUI 0.3.x, frontend 1.2x.x, Desktop / portable / manual install
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Console output
+      description: Lines starting with `[Civitai Browser]` and any errors from the browser console (F12). Please remove your API key if it appears.
+      render: shell
