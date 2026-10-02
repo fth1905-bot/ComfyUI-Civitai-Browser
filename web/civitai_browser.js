@@ -229,6 +229,17 @@ function addLoaderNode(type, filename) {
 
 const normModel = (v) => String(v || "").replace(/\\/g, "/").toLowerCase();
 
+function replaceDeep(obj, from, toName, depth = 0) {
+  if (!obj || typeof obj !== "object" || depth > 6) return 0;
+  let n = 0;
+  for (const k of Object.keys(obj)) {
+    const v = obj[k];
+    if (typeof v === "string" && normModel(v) === from) { obj[k] = toName; n++; }
+    else if (v && typeof v === "object") n += replaceDeep(v, from, toName, depth + 1);
+  }
+  return n;
+}
+
 // Re-point every widget in the loaded graph (incl. subgraphs) from one model name to another.
 function replaceModelInGraph(fromName, toName) {
   const root = app.rootGraph || app.graph;
@@ -246,10 +257,19 @@ function replaceModelInGraph(fromName, toName) {
           w.value = toName;
           try { w.callback?.(w.value, app.canvas, node); } catch {}
           count++;
+        } else if (typeof w.value === "string" && /^\s*[\[{]/.test(w.value)) {
+          // JSON stored in a string widget (e.g. AusBoss LoraLoader rows)
+          try {
+            const parsed = JSON.parse(w.value);
+            const n = replaceDeep(parsed, from, toName);
+            if (n) {
+              w.value = JSON.stringify(parsed);
+              try { w.callback?.(w.value, app.canvas, node); } catch {}
+              count += n;
+            }
+          } catch {}
         } else if (w.value && typeof w.value === "object") {
-          for (const k of Object.keys(w.value)) {
-            if (typeof w.value[k] === "string" && normModel(w.value[k]) === from) { w.value[k] = toName; count++; }
-          }
+          count += replaceDeep(w.value, from, toName);
         }
       }
     }

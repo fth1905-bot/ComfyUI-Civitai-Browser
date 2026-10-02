@@ -728,14 +728,28 @@ def _iter_nodes(wf):
                 yield n["class_type"], list((n.get("inputs") or {}).values()), {}
 
 
-def _model_strings(values):
+def _model_strings(values, _depth=0):
+    """Model file names inside widget values: plain strings, dicts/lists (e.g. Power Lora Loader)
+    and JSON encoded in a string (e.g. AusBoss LoraLoader stores its rows as a JSON string)."""
+    if _depth > 6:
+        return
+    if isinstance(values, dict):
+        values = list(values.values())
+    if not isinstance(values, (list, tuple)):
+        values = [values]
     for v in values:
-        if isinstance(v, str) and v.lower().endswith(MODEL_EXTS):
-            yield v
-        elif isinstance(v, dict):  # e.g. Power Lora Loader {"lora": "x.safetensors", ...}
-            for vv in v.values():
-                if isinstance(vv, str) and vv.lower().endswith(MODEL_EXTS):
-                    yield vv
+        if isinstance(v, str):
+            t = v.strip()
+            if t.lower().endswith(MODEL_EXTS) and "\n" not in t and len(t) < 400:
+                yield t
+            elif t[:1] in "[{" and len(t) < 200000:
+                try:
+                    parsed = json.loads(t)
+                except Exception:
+                    continue
+                yield from _model_strings(parsed, _depth + 1)
+        elif isinstance(v, (dict, list, tuple)):
+            yield from _model_strings(v, _depth + 1)
 
 
 # --------------------------------------------------------------------------- #
@@ -816,10 +830,33 @@ async def analyze_workflow(request):
         return _json_error("workflow is required")
     local = _local_index()
     known_urls = {}
-    for _, _, props in _iter_nodes(wf):
+
+    def _collect(obj, depth=0):
+        # any {"name": "x.safetensors", "url": "...", "directory"/"dir": "..."} entry, also inside JSON strings
+        if depth > 6:
+            return
+        if isinstance(obj, str) and obj.strip()[:1] in "[{" and len(obj) < 200000:
+            try:
+                obj = json.loads(obj)
+            except Exception:
+                return
+        if isinstance(obj, dict):
+            n, u = obj.get("name"), obj.get("url")
+            if isinstance(n, str) and isinstance(u, str) and u.startswith("http") and n.lower().endswith(MODEL_EXTS):
+                key = n.replace("\\", "/").rsplit("/", 1)[-1].lower()
+                entry = {"name": n, "url": u, "directory": obj.get("directory") or obj.get("dir")}
+                known_urls.setdefault(key, entry)
+            for v in obj.values():
+                _collect(v, depth + 1)
+        elif isinstance(obj, (list, tuple)):
+            for v in obj:
+                _collect(v, depth + 1)
+
+    for _, values, props in _iter_nodes(wf):
         for m in props.get("models") or []:
             if isinstance(m, dict) and m.get("name"):
                 known_urls[m["name"].replace("\\", "/").rsplit("/", 1)[-1].lower()] = m
+        _collect(values)
     for m in (wf.get("models") or []) if isinstance(wf.get("models"), list) else []:
         if isinstance(m, dict) and m.get("name"):
             known_urls[m["name"].replace("\\", "/").rsplit("/", 1)[-1].lower()] = m

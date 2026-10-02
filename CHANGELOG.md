@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.1
+- Fixed: models referenced inside JSON-encoded widget values (e.g. AusBoss LoraLoader rows) were not detected as missing
+- Download links listed anywhere in a workflow (e.g. model lists in note nodes) are now used as sources
+- "Use mine" also works for these nodes
+
 ## 1.3.0
 - **Missing custom nodes**: Setup now shows which node pack provides each missing node (using ComfyUI-Manager's node list), groups them, and links to each pack
 - **Install with Manager** button opens ComfyUI-Manager's missing-packs dialog. The installation itself is done by Manager, which handles the custom_nodes folder, Python dependencies and security checks.
