@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.0
+- Base model filter is now filled from Civitai's live list, so new models (e.g. MiniMax H3) show up without an update. A built-in list is used if Civitai can't be reached.
+- Workflows category includes every workflow type Civitai offers (e.g. ComfyUI Workflows), not just "Workflows"
+- New categories when Civitai provides them: UNet / Diffusion, Text Encoder, CLIP Vision, downloaded into `diffusion_models`, `text_encoders` and `clip_vision`
+- civitai.red support: mature models open on civitai.red, and a setting lets you open every link there
+
 ## 1.3.1
 - Fixed: LoRAs and other models stored as JSON inside a node's widget value were not detected as missing. This affects any loader that saves its list of models this way (for example multi-LoRA loaders such as AusBoss LoraLoader); all of them are now scanned, including nested lists.
 - Download links listed anywhere in a workflow (e.g. model lists in note nodes) are now used as sources

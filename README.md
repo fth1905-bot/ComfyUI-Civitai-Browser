@@ -25,8 +25,9 @@ It's a pure frontend + API extension. It **adds no nodes**, **never modifies Com
 
 ### 🔎 Browse Civitai inside ComfyUI
 - Categories: **Workflows, Checkpoints, LoRA, Embeddings, ControlNet, VAE, Upscalers, Motion modules**, or everything at once
-- Search, sort (most downloaded / highest rated / newest), time period and base model filters
+- Search, sort (most downloaded / highest rated / newest), time period and base model filters (the base model list comes live from Civitai, so new models like MiniMax H3 appear automatically)
 - NSFW filter (off by default; NSFW previews are blurred)
+- civitai.red support: mature models open on civitai.red; optionally open every link there (Settings → Civitai)
 - Infinite scroll, image and video previews
 - Detail view with gallery, versions, trigger words (click to copy), files, tags and description
 
@@ -83,8 +84,9 @@ Download the [latest ZIP](https://github.com/fth1905-bot/ComfyUI-Civitai-Browser
 Browsing works without a key, but many models and workflows can only be downloaded by logged-in users.
 
 1. On civitai.com, open **Account Settings → Security & Apps → API Keys** and click **Add API key**.
-2. Copy the key. Civitai only shows it once.
-3. In ComfyUI, open **Settings (⚙) → Civitai → Civitai API key** and paste it.
+2. Leave **Buzz spend limit** off. This extension never spends Buzz.
+3. Copy the key. Civitai only shows it once.
+4. In ComfyUI, open **Settings (⚙) → Civitai → Civitai API key** and paste it.
 
 Alternatively, set the key on the server side:
 - with the environment variable `CIVITAI_API_KEY`, or

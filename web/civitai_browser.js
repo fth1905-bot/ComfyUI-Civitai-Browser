@@ -7,6 +7,7 @@ const EXT = "Civitai.Browser";
 const ROUTE = "/civitai_browser";
 const SETTING_KEY = "CivitaiBrowser.ApiKey";
 const SETTING_NSFW = "CivitaiBrowser.ShowNSFW";
+const SETTING_RED = "CivitaiBrowser.UseRed";
 
 // ------------------------------------------------------------------ css
 (() => {
@@ -19,7 +20,7 @@ const SETTING_NSFW = "CivitaiBrowser.ShowNSFW";
 })();
 
 // ------------------------------------------------------------------ helpers
-const CATEGORIES = [
+const BASE_CATEGORIES = [
   { id: "Workflows", label: "Workflows", icon: "pi pi-sitemap", types: ["Workflows"] },
   { id: "Checkpoint", label: "Checkpoint", icon: "pi pi-box", types: ["Checkpoint"] },
   { id: "LORA", label: "LoRA", icon: "pi pi-sliders-h", types: ["LORA", "LoCon", "DoRA"] },
@@ -30,15 +31,42 @@ const CATEGORIES = [
   { id: "MotionModule", label: "Motion", icon: "pi pi-video", types: ["MotionModule"] },
   { id: "All", label: "All", icon: "pi pi-th-large", types: [] },
 ];
+// extra categories, shown only if Civitai's live type list has them
+const EXTRA_CATEGORIES = [
+  { id: "UNet", label: "UNet / Diffusion", icon: "pi pi-bolt", match: ["unet", "diffusionmodel"] },
+  { id: "TextEncoder", label: "Text Encoder", icon: "pi pi-align-left", match: ["textencoder"] },
+  { id: "ClipVision", label: "CLIP Vision", icon: "pi pi-eye", match: ["clipvision"] },
+];
+const normType = (t) => String(t || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+const isWorkflowType = (t) => /workflow/i.test(String(t || ""));
+let CATEGORIES = BASE_CATEGORIES.map((c) => ({ ...c }));
+function applyModelTypes(types) {
+  if (!Array.isArray(types) || !types.length) return;
+  const cats = BASE_CATEGORIES.map((c) => ({ ...c }));
+  const wf = types.filter(isWorkflowType); // e.g. "Workflows" and "ComfyUI Workflows"
+  if (wf.length) cats[0].types = wf;
+  const lora = types.filter((t) => ["lora", "locon", "dora", "lycoris"].includes(normType(t)));
+  if (lora.length) cats.find((c) => c.id === "LORA").types = lora;
+  const extra = [];
+  for (const x of EXTRA_CATEGORIES) {
+    const found = types.filter((t) => x.match.includes(normType(t)));
+    if (found.length) extra.push({ id: x.id, label: x.label, icon: x.icon, types: found });
+  }
+  cats.splice(cats.length - 1, 0, ...extra); // before "All"
+  CATEGORIES = cats;
+}
 const SORTS = ["Most Downloaded", "Highest Rated", "Newest"];
 const SORT_LABELS = { "Most Downloaded": "Most downloaded", "Highest Rated": "Highest rated", "Newest": "Newest" };
 const PERIODS = { AllTime: "All time", Year: "This year", Month: "This month", Week: "This week", Day: "Today" };
-const BASE_MODELS = ["", "SD 1.5", "SDXL 1.0", "Pony", "Illustrious", "NoobAI", "Flux.1 D", "Flux.1 S", "SD 3.5", "Wan Video", "Hunyuan Video", "Qwen"];
+let BASE_MODELS = ["", "SD 1.5", "SDXL 1.0", "Pony", "Illustrious", "NoobAI", "Flux.1 D", "Flux.1 S", "Qwen", "Hunyuan Video", "Wan Video 2.2 T2V-A14B", "Wan Video 2.2 I2V-A14B", "ZImageTurbo", "MiniMax H3"];
 const TYPE_TO_FOLDER = {
   checkpoint: "checkpoints", lora: "loras", locon: "loras", dora: "loras", lycoris: "loras",
   textualinversion: "embeddings", vae: "vae", controlnet: "controlnet", upscaler: "upscale_models",
   hypernetwork: "hypernetworks", motionmodule: "animatediff_models", detection: "ultralytics",
+  unet: "diffusion_models", diffusionmodel: "diffusion_models", textencoder: "text_encoders", clipvision: "clip_vision",
 };
+// civitai.red shows the full catalog (incl. mature content); civitai.com hides mature models.
+const civitaiSite = (nsfw) => (getSetting(SETTING_RED, false) || nsfw ? "https://civitai.red" : "https://civitai.com");
 const IGNORE_NODE_TYPES = new Set(["Reroute", "Note", "MarkdownNote", "PrimitiveNode", "PrimitiveString", "PrimitiveInt", "PrimitiveFloat", "PrimitiveBoolean"]);
 
 const el = (tag, props = {}, ...children) => {
@@ -148,7 +176,7 @@ const mediaEl = (im, width, autoplay = false) => {
 };
 
 const primaryFile = (version) => (version?.files || []).find((f) => f.primary) || version?.files?.[0];
-const folderForType = (type) => TYPE_TO_FOLDER[(type || "").toLowerCase()] || "checkpoints";
+const folderForType = (type) => TYPE_TO_FOLDER[normType(type)] || "checkpoints";
 
 // ------------------------------------------------------------------ downloads store
 const downloads = {
@@ -281,6 +309,7 @@ function replaceModelInGraph(fromName, toName) {
 const FOLDER_TYPES = {
   checkpoints: ["Checkpoint"], loras: ["LORA", "LoCon", "DoRA", "LyCORIS"], vae: ["VAE"],
   controlnet: ["Controlnet"], upscale_models: ["Upscaler"], embeddings: ["TextualInversion"],
+  diffusion_models: ["Checkpoint", "UNet", "DiffusionModel"], text_encoders: ["TextEncoder"], clip_vision: ["ClipVision"],
 };
 
 function missingNodeTypes(wf) {
@@ -335,6 +364,29 @@ class CivitaiBrowser {
     this.ensureFolders();
     downloads.refresh();
     this.reload();
+    this.loadEnums();
+  }
+
+  // Fill base models / model types from Civitai's live lists (falls back to built-in lists).
+  async loadEnums() {
+    let data;
+    try { data = await callApi("/enums"); } catch { return; }
+    if (Array.isArray(data.base_models) && data.base_models.length) {
+      BASE_MODELS = ["", ...[...new Set(data.base_models)].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))];
+      if (this.baseSel) {
+        const cur = this.state.baseModel;
+        this.baseSel.innerHTML = "";
+        for (const b of BASE_MODELS) this.baseSel.appendChild(el("option", { value: b }, b || "All base models"));
+        this.baseSel.value = BASE_MODELS.includes(cur) ? cur : "";
+      }
+    }
+    if (data.source === "civitai" && Array.isArray(data.model_types)) {
+      const before = JSON.stringify(CATEGORIES.find((c) => c.id === this.state.category)?.types || []);
+      applyModelTypes(data.model_types);
+      this.renderNav();
+      const after = JSON.stringify(CATEGORIES.find((c) => c.id === this.state.category)?.types || []);
+      if (before !== after && this.state.view === "grid") this.reload(); // e.g. Workflows now also includes "ComfyUI Workflows"
+    }
   }
 
   close() { if (this.overlay) this.overlay.style.display = "none"; }
@@ -350,6 +402,7 @@ class CivitaiBrowser {
     perSel.value = st.period;
     perSel.onchange = () => { st.period = perSel.value; this.reload(); };
     const baseSel = el("select", { class: "cvb-select" }, BASE_MODELS.map((b) => el("option", { value: b }, b || "All base models")));
+    this.baseSel = baseSel;
     baseSel.onchange = () => { st.baseModel = baseSel.value; this.reload(); };
     const nsfwCb = el("input", { type: "checkbox" });
     nsfwCb.checked = this.nsfw;
@@ -485,7 +538,7 @@ class CivitaiBrowser {
     const thumb = el("div", { class: "cvb-thumb" + (pic?.blur ? " blur" : "") },
       pic ? mediaEl(pic.im, 450) : null,
       el("div", { class: "cvb-badges" },
-        el("span", { class: "cvb-badge type" }, m.type === "Workflows" ? "Workflow" : m.type),
+        el("span", { class: "cvb-badge type" }, isWorkflowType(m.type) ? "Workflow" : m.type),
         v0?.baseModel ? el("span", { class: "cvb-badge" }, v0.baseModel) : null,
         m.nsfw ? el("span", { class: "cvb-badge nsfw" }, "NSFW") : null));
     const video = thumb.querySelector("video");
@@ -536,7 +589,7 @@ class CivitaiBrowser {
       thumbs.appendChild(t);
     });
 
-    const isWorkflow = model.type === "Workflows";
+    const isWorkflow = isWorkflowType(model.type);
     const right = el("div", {});
     right.appendChild(el("h2", { class: "cvb-d-title" }, model.name));
     right.appendChild(el("div", { class: "cvb-d-sub" },
@@ -561,7 +614,7 @@ class CivitaiBrowser {
       if (!f) { prepBtn.disabled = true; loadBtn.disabled = true; }
       actions.append(prepBtn, loadBtn);
     }
-    actions.appendChild(el("a", { class: "cvb-btn", href: `https://civitai.com/models/${model.id}${ver ? "?modelVersionId=" + ver.id : ""}`, target: "_blank", rel: "noopener" }, "Open on Civitai ↗"));
+    actions.appendChild(el("a", { class: "cvb-btn", href: `${civitaiSite(model.nsfw)}/models/${model.id}${ver ? "?modelVersionId=" + ver.id : ""}`, target: "_blank", rel: "noopener" }, "Open on Civitai ↗"));
     right.appendChild(actions);
 
     if (ver?.trainedWords?.length) {
@@ -737,7 +790,7 @@ class CivitaiBrowser {
             for (const f of v.files || []) {
               const exact = (f.name || "").toLowerCase() === target;
               const allowed = FOLDER_TYPES[m.folder];
-              if (!exact && allowed && !allowed.includes(it.type)) continue; // e.g. don't suggest checkpoints for a VAE
+              if (!exact && allowed && !allowed.map(normType).includes(normType(it.type))) continue; // e.g. don't suggest checkpoints for a VAE
               if (exact || f.primary) {
                 if (!found.some((x) => x.file.id === f.id)) found.push({ model: it, version: v, file: f, exact });
               }
@@ -990,7 +1043,7 @@ class CivitaiBrowser {
         el("div", { class: "grow" },
           el("div", {}, el("b", {}, c.model.name), " — ", c.version.name),
           el("div", { class: "cvb-file-meta" }, `${c.file.name} · ${fmtSize(c.file.sizeKB)} · ${c.version.baseModel || ""}`)),
-        el("a", { class: "cvb-btn small", href: `https://civitai.com/models/${c.model.id}?modelVersionId=${c.version.id}`, target: "_blank", rel: "noopener" }, "↗"),
+        el("a", { class: "cvb-btn small", href: `${civitaiSite(c.model.nsfw)}/models/${c.model.id}?modelVersionId=${c.version.id}`, target: "_blank", rel: "noopener" }, "↗"),
         choose ? el("button", { class: "cvb-btn small", title: `The file is saved under the name the workflow expects (${m.name})`, onclick: () => this.downloadMissing(m, c.file.downloadUrl, c.file.name) }, "Use this") : null));
     }
     return box;
@@ -1036,7 +1089,7 @@ class CivitaiBrowser {
           el("div", { style: { display: "flex", gap: "6px", marginTop: "4px", flexWrap: "wrap" } },
             el("button", { class: "cvb-btn primary small", onclick: () => open(true) }, "⚡ Open & Set Up"),
             el("button", { class: "cvb-btn small", onclick: () => open(false) }, "Open"),
-            it.model_id ? el("a", { class: "cvb-btn small", target: "_blank", rel: "noopener", href: `https://civitai.com/models/${it.model_id}` }, "↗") : null,
+            it.model_id ? el("a", { class: "cvb-btn small", target: "_blank", rel: "noopener", href: `${civitaiSite(it.nsfw)}/models/${it.model_id}` }, "↗") : null,
             delBtn(it)))));
     }
     c.appendChild(grid);
@@ -1164,6 +1217,14 @@ app.registerExtension({
       tooltip: "Create one at civitai.com → Account Settings → Security & Apps → API Keys.",
       type: "text",
       defaultValue: "",
+    },
+    {
+      id: SETTING_RED,
+      category: ["Civitai", "General", "Site"],
+      name: "Open Civitai pages on civitai.red (full catalog incl. mature content)",
+      tooltip: "Off: links go to civitai.com, except for mature models, which always open on civitai.red.",
+      type: "boolean",
+      defaultValue: false,
     },
     {
       id: SETTING_NSFW,

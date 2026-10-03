@@ -40,6 +40,10 @@ TYPE_TO_FOLDER = {
     "hypernetwork": "hypernetworks",
     "motionmodule": "animatediff_models",
     "detection": "ultralytics",
+    "unet": "diffusion_models",
+    "diffusionmodel": "diffusion_models",
+    "textencoder": "text_encoders",
+    "clipvision": "clip_vision",
 }
 
 # loader node type (lowercase substring) -> ComfyUI model folder
@@ -216,6 +220,59 @@ async def civitai_model(request):
     except Exception as e:
         return _json_error(str(e), 502)
     return web.json_response(data, status=status)
+
+
+# Model types and base models change often on Civitai (e.g. new video models), so the
+# dropdowns are filled from Civitai's own enum list when it is reachable.
+FALLBACK_BASE_MODELS = [  # only names seen on Civitai; the live list replaces this when reachable
+    "SD 1.5", "SDXL 1.0", "Pony", "Illustrious", "NoobAI", "Flux.1 D", "Flux.1 S", "Qwen", "Hunyuan Video",
+    "Wan Video 2.2 T2V-A14B", "Wan Video 2.2 I2V-A14B", "ZImageTurbo", "MiniMax H3",
+]
+FALLBACK_MODEL_TYPES = ["Checkpoint", "LORA", "LoCon", "DoRA", "TextualInversion", "Controlnet", "VAE",
+                        "Upscaler", "MotionModule", "Workflows"]
+_ENUM_CACHE = {"t": 0, "data": None}
+
+
+def _pick_list(data, *needles):
+    if not isinstance(data, dict):
+        return None
+
+    def values(v):
+        vals = [x if isinstance(x, str) else (x.get("value") or x.get("name")) for x in v if x]
+        return [x for x in vals if isinstance(x, str) and x]
+
+    keys = [(re.sub(r"[^a-z]", "", str(k).lower()), v) for k, v in data.items() if isinstance(v, list)]
+    for exact in (True, False):  # prefer "BaseModel" over e.g. "ActiveBaseModel"
+        for nk, v in keys:
+            if any((n == nk) if exact else nk.endswith(n) for n in needles):
+                vals = values(v)
+                if vals:
+                    return vals
+    return None
+
+
+@routes.get(PREFIX + "/enums")
+async def civitai_enums(request):
+    now = time.time()
+    if _ENUM_CACHE["data"] and now - _ENUM_CACHE["t"] < 6 * 3600:
+        return web.json_response(_ENUM_CACHE["data"])
+    out = {"base_models": FALLBACK_BASE_MODELS, "model_types": FALLBACK_MODEL_TYPES, "source": "fallback"}
+    try:
+        status, data = await _civitai_get("/enums", None, request)
+        if status == 200:
+            bm = _pick_list(data, "basemodel", "basemodels")
+            mt = _pick_list(data, "modeltype", "modeltypes")
+            if bm:
+                out["base_models"] = bm
+            if mt:
+                out["model_types"] = mt
+            if bm or mt:
+                out["source"] = "civitai"
+    except Exception as e:
+        logging.info(f"{LOG} enums not available, using built-in lists: {e}")
+    if out["source"] == "civitai":
+        _ENUM_CACHE.update(t=now, data=out)
+    return web.json_response(out)
 
 
 @routes.get(PREFIX + "/folders")
